@@ -2,7 +2,14 @@
 Generates Calls data and stores in it PostGre DB.
 
 ## Prerequisites
-Setup a PostGre container. Refer to the steps in https://github.com/sahil-khanna-vonage/vonage-hackathon-2025-bot-api
+- Setup a PostGre container. Refer to the steps in https://github.com/sahil-khanna-vonage/vonage-hackathon-2025-bot-api
+- Install Node and NPM on your system.
+
+## Generate data
+```
+npm i
+node index
+```
 
 
 ## Start SQLCoder
