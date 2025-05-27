@@ -1,0 +1,16 @@
+{
+  "name": "data-generator-script",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "run": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "faker": "^5.5.3",
+    "pg": "^8.16.0"
+  }
+}
