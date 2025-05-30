@@ -4,17 +4,17 @@ const faker = require('faker');
 const client = new Client({
   user: 'postgres',
   host: 'localhost',
-  database: 'calls',
+  database: 'interactions',
   password: 'sliyRR@fPdsf3',
   port: 5432,
 });
 
 const QUEUES = ['Product Support', 'Billing Support', 'Technical Support'];
-const STATUSES = ['completed', 'dropped', 'queued', 'on going'];
+const STATUSES = ['completed', 'dropped', 'queued', 'on going', 'missed'];
 const CALL_TYPES = ['inbound', 'outbound'];
 const AGENT_STATUSES = ['On Call', 'Available', 'Break'];
 
-async function seedData(rows = 100) {
+async function seedData(rows = 10000) {
   await client.connect();
 
   // Drop and recreate tables
@@ -23,20 +23,20 @@ async function seedData(rows = 100) {
     DROP TABLE IF EXISTS queue_status;
     DROP TABLE IF EXISTS agent_status;
     DROP TABLE IF EXISTS agent_performance;
+    DROP TABLE IF EXISTS agents;
+
+    CREATE TABLE agents (
+      agent_id INT PRIMARY KEY,
+      agent_name VARCHAR(100)
+    );
 
     CREATE TABLE agent_status (
       agent_id INT PRIMARY KEY,
-      agent_name VARCHAR(100),
       status VARCHAR(20),
       logged_in_at TIMESTAMP,
-      on_break_since TIMESTAMP
+      on_break_since TIMESTAMP,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
     );
-
-    COMMENT ON COLUMN agent_status.agent_id IS 'The employee ID of the agent.';
-    COMMENT ON COLUMN agent_status.agent_name IS 'Full name of the agent';
-    COMMENT ON COLUMN agent_status.status IS 'Current status of the agent. Possible values are "On Call", "Available" and "Break"';
-    COMMENT ON COLUMN agent_status.logged_in_at IS 'Timestamp when the agent logged in';
-    COMMENT ON COLUMN agent_status.on_break_since IS 'Timestamp when the agent went on break';
 
     CREATE TABLE agent_performance (
       agent_id INT PRIMARY KEY,
@@ -44,15 +44,9 @@ async function seedData(rows = 100) {
       aht FLOAT,
       break_time FLOAT,
       csat FLOAT,
-      login_duration FLOAT
+      login_duration FLOAT,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
     );
-
-    COMMENT ON COLUMN agent_performance.agent_id IS 'The employee ID of the agent.';
-    COMMENT ON COLUMN agent_performance.calls_handled IS 'Number of calls handled by the agent';
-    COMMENT ON COLUMN agent_performance.aht IS 'Average Handle Time in minutes';
-    COMMENT ON COLUMN agent_performance.break_time IS 'Total break time in minutes';
-    COMMENT ON COLUMN agent_performance.csat IS 'Customer Satisfaction score as a percentage';
-    COMMENT ON COLUMN agent_performance.login_duration IS 'Total login time in hours';
 
     CREATE TABLE queue_status (
       queue_name VARCHAR(50) PRIMARY KEY,
@@ -62,12 +56,6 @@ async function seedData(rows = 100) {
       sla_met FLOAT
     );
 
-    COMMENT ON COLUMN queue_status.queue_name IS 'Name of the queue. Possble values are "Product Support", "Business Support" and "Technical Support"';
-    COMMENT ON COLUMN queue_status.waiting_calls IS 'Current number of calls waiting in the queue';
-    COMMENT ON COLUMN queue_status.average_wait IS 'Average wait time in seconds';
-    COMMENT ON COLUMN queue_status.longest_wait IS 'Longest wait time in seconds';
-    COMMENT ON COLUMN queue_status.sla_met IS 'Percentage of calls meeting SLA';
-
     CREATE TABLE call_logs (
       call_id UUID PRIMARY KEY,
       agent_id INT,
@@ -76,18 +64,18 @@ async function seedData(rows = 100) {
       end_time TIMESTAMP,
       duration INT,
       type VARCHAR(20),
-      status VARCHAR(20)
+      status VARCHAR(20),
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
     );
-
-    COMMENT ON COLUMN call_logs.call_id IS 'The employee ID of the agent.';
-    COMMENT ON COLUMN call_logs.agent_id IS 'Agent who handled the call';
-    COMMENT ON COLUMN call_logs.queue IS 'Queue the call belonged to';
-    COMMENT ON COLUMN call_logs.start_time IS 'Start time of the call';
-    COMMENT ON COLUMN call_logs.end_time IS 'End time of the call';
-    COMMENT ON COLUMN call_logs.duration IS 'Call duration in seconds';
-    COMMENT ON COLUMN call_logs.type IS 'Type of call. Possble values are "inbound" and "outbound"';
-    COMMENT ON COLUMN call_logs.status IS 'Call status. Possible values are "completed", "dropped", "queued", "on going")';
   `);
+
+  // Utility: Random date within past 30 days
+  function randomPastDate(days = 30) {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    return faker.date.between(start, end);
+  }
 
   // Create dummy agents
   const agents = Array.from({ length: 20 }, (_, i) => ({
@@ -95,16 +83,22 @@ async function seedData(rows = 100) {
     name: faker.name.findName(),
   }));
 
-  // Insert agent_status and agent_performance
+  for (const agent of agents) {
+    await client.query(
+      `INSERT INTO agents (agent_id, agent_name) VALUES ($1, $2)`,
+      [agent.id, agent.name]
+    );
+  }
+
   for (const agent of agents) {
     const status = AGENT_STATUSES[Math.floor(Math.random() * AGENT_STATUSES.length)];
-    const loggedInAt = faker.date.recent(1);
+    const loggedInAt = randomPastDate();
     const onBreakSince = status === 'Break' ? faker.date.between(loggedInAt, new Date()) : null;
 
     await client.query(
-      `INSERT INTO agent_status (agent_id, agent_name, status, logged_in_at, on_break_since)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [agent.id, agent.name, status, loggedInAt, onBreakSince]
+      `INSERT INTO agent_status (agent_id, status, logged_in_at, on_break_since)
+       VALUES ($1, $2, $3, $4)`,
+      [agent.id, status, loggedInAt, onBreakSince]
     );
 
     await client.query(
@@ -121,7 +115,6 @@ async function seedData(rows = 100) {
     );
   }
 
-  // Insert queue_status
   for (const queue of QUEUES) {
     await client.query(
       `INSERT INTO queue_status (queue_name, waiting_calls, average_wait, longest_wait, sla_met)
@@ -136,13 +129,12 @@ async function seedData(rows = 100) {
     );
   }
 
-  // Insert call_logs
   for (let i = 0; i < rows; i++) {
     const agent = agents[Math.floor(Math.random() * agents.length)];
     const queue = QUEUES[Math.floor(Math.random() * QUEUES.length)];
     const type = CALL_TYPES[Math.floor(Math.random() * CALL_TYPES.length)];
     const status = STATUSES[Math.floor(Math.random() * STATUSES.length)];
-    const start = faker.date.recent();
+    const start = randomPastDate();
     const duration = faker.datatype.number({ min: 30, max: 900 });
     const end = new Date(start.getTime() + duration * 1000);
 
@@ -163,7 +155,7 @@ async function seedData(rows = 100) {
   }
 
   await client.end();
-  console.log(`${rows} call logs inserted along with agent, queue, and performance data.`);
+  console.log(`${rows} call logs inserted with data distributed over past 30 days.`);
 }
 
-seedData(1000); // Change this number if needed
+seedData(10000);
