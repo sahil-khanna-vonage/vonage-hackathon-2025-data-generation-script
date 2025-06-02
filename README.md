@@ -1,27 +1,26 @@
-# Getting Started
-Generates Calls data and stores in it PostGre DB.
+# 📞 Getting Started: Call Data Generator
 
-## Prerequisites
-- Setup a PostGre container. Refer to the steps in https://github.com/sahil-khanna-vonage/vonage-hackathon-2025-bot-api
-- Install Node and NPM on your system.
+This project generates synthetic call center data and inserts it into a PostgreSQL database. It's useful for testing dashboards, analytics platforms, or backend systems.
 
-## Generate data
-```
-npm i
-node index
-```
+---
 
+## 🚧 Prerequisites
 
-## Start SQLCoder
-- Clone the repo from https://github.com/defog-ai/sqlcoder
+Before running the script, make sure you have:
+
+- ✅ A **PostgreSQL** database running.  
+  Follow the setup guide here:  
+  👉 [Vonage Hackathon DB Setup Guide](https://github.com/sahil-khanna-vonage/vonage-hackathon-2025-bot-api)
+
+- ✅ **Node.js and NPM** installed on your machine.
+
+---
+
+## ⚙️ Environment Variables
+
+All database configuration is managed using environment variables. To set them up:
+
+```bash
+cp example.env .prod.env
 ```
-git clone https://github.com/defog-ai/sqlcoder.git
-cd sqlcoder
-```
-- Follow the instructions. Below are the instructions for Mac
-```
-python3 -m venv llama-env
-source llama-env/bin/activate
-CMAKE_ARGS="-DLLAMA_METAL=on" pip install "sqlcoder[llama-cpp]"
-sqlcoder launch
-```
+Then edit .prod.env with your environment-specific settings.
