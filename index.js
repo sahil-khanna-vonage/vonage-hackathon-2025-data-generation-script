@@ -1,12 +1,13 @@
 const { Client } = require('pg');
 const faker = require('faker');
+require("dotenv").config({ path: ".prod.env" });
 
 const client = new Client({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'interactions',
-  password: 'sliyRR@fPdsf3',
-  port: 5432,
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: parseInt(process.env.DB_PORT, 10),
 });
 
 const QUEUES = ['Product Support', 'Billing Support', 'Technical Support'];
@@ -71,10 +72,14 @@ async function seedData(rows = 10000) {
 
   // Utility: Random date within past 30 days
   function randomPastDate(days = 30) {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - days);
-    return faker.date.between(start, end);
+    const now = new Date();
+    const past = new Date();
+    past.setDate(now.getDate() - days);
+    const timestamp = faker.datatype.number({
+      min: past.getTime(),
+      max: now.getTime(),
+    });
+    return new Date(timestamp);
   }
 
   // Create dummy agents
