@@ -1,5 +1,5 @@
-const { Client } = require('pg');
-const faker = require('faker');
+const { Client } = require("pg");
+const faker = require("faker");
 require("dotenv").config({ path: ".prod.env" });
 
 const client = new Client({
@@ -10,22 +10,43 @@ const client = new Client({
   port: parseInt(process.env.DB_PORT, 10),
 });
 
-const QUEUES = ['Product Support', 'Billing Support', 'Technical Support'];
-const STATUSES = ['completed', 'dropped', 'queued', 'on going', 'missed'];
-const CALL_TYPES = ['inbound', 'outbound'];
-const AGENT_STATUSES = ['On Call', 'Available', 'Break'];
+const QUEUES = ["Product Support", "Billing Support", "Technical Support"];
+const STATUSES = ["completed", "dropped", "queued", "on going", "missed"];
+const CALL_TYPES = ["inbound", "outbound"];
+const AGENT_STATUSES = ["On Call", "Available", "Break"];
 
-async function seedData(rows = 10000) {
+async function seedData(repsPerCombinationPerDay = 5) {
   await client.connect();
 
-  // Drop and recreate tables
   await client.query(`
+    -- Drop dependent tables first
     DROP TABLE IF EXISTS call_logs;
     DROP TABLE IF EXISTS queue_status;
     DROP TABLE IF EXISTS agent_status;
     DROP TABLE IF EXISTS agent_performance;
     DROP TABLE IF EXISTS agents;
 
+    -- Drop ENUM types if they exist
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'queue_enum') THEN
+        DROP TYPE queue_enum;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'status_enum') THEN
+        DROP TYPE status_enum;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'call_type_enum') THEN
+        DROP TYPE call_type_enum;
+      END IF;
+    END
+    $$;
+
+    -- Create ENUMs
+    CREATE TYPE queue_enum AS ENUM ('Product Support', 'Billing Support', 'Technical Support');
+    CREATE TYPE status_enum AS ENUM ('completed', 'dropped', 'queued', 'on going', 'missed');
+    CREATE TYPE call_type_enum AS ENUM ('inbound', 'outbound');
+
+    -- Tables
     CREATE TABLE agents (
       agent_id INT PRIMARY KEY,
       agent_name VARCHAR(100)
@@ -50,7 +71,7 @@ async function seedData(rows = 10000) {
     );
 
     CREATE TABLE queue_status (
-      queue_name VARCHAR(50) PRIMARY KEY,
+      queue_name queue_enum PRIMARY KEY,
       waiting_calls INT,
       average_wait INT,
       longest_wait INT,
@@ -60,29 +81,17 @@ async function seedData(rows = 10000) {
     CREATE TABLE call_logs (
       call_id UUID PRIMARY KEY,
       agent_id INT,
-      queue VARCHAR(50),
+      queue queue_enum,
       start_time TIMESTAMP,
       end_time TIMESTAMP,
       duration INT,
-      type VARCHAR(20),
-      status VARCHAR(20),
+      type call_type_enum,
+      status status_enum,
       FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
     );
   `);
 
-  // Utility: Random date within past 30 days
-  function randomPastDate(days = 30) {
-    const now = new Date();
-    const past = new Date();
-    past.setDate(now.getDate() - days);
-    const timestamp = faker.datatype.number({
-      min: past.getTime(),
-      max: now.getTime(),
-    });
-    return new Date(timestamp);
-  }
-
-  // Create dummy agents
+  // Utility: Create agent data
   const agents = Array.from({ length: 20 }, (_, i) => ({
     id: 1000 + i,
     name: faker.name.findName(),
@@ -96,13 +105,14 @@ async function seedData(rows = 10000) {
   }
 
   for (const agent of agents) {
-    const status = AGENT_STATUSES[Math.floor(Math.random() * AGENT_STATUSES.length)];
-    const loggedInAt = randomPastDate();
-    const onBreakSince = status === 'Break' ? faker.date.between(loggedInAt, new Date()) : null;
+    const status =
+      AGENT_STATUSES[Math.floor(Math.random() * AGENT_STATUSES.length)];
+    const loggedInAt = faker.date.recent(30);
+    const onBreakSince =
+      status === "Break" ? faker.date.between(loggedInAt, new Date()) : null;
 
     await client.query(
-      `INSERT INTO agent_status (agent_id, status, logged_in_at, on_break_since)
-       VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO agent_status (agent_id, status, logged_in_at, on_break_since) VALUES ($1, $2, $3, $4)`,
       [agent.id, status, loggedInAt, onBreakSince]
     );
 
@@ -134,33 +144,55 @@ async function seedData(rows = 10000) {
     );
   }
 
-  for (let i = 0; i < rows; i++) {
-    const agent = agents[Math.floor(Math.random() * agents.length)];
-    const queue = QUEUES[Math.floor(Math.random() * QUEUES.length)];
-    const type = CALL_TYPES[Math.floor(Math.random() * CALL_TYPES.length)];
-    const status = STATUSES[Math.floor(Math.random() * STATUSES.length)];
-    const start = randomPastDate();
-    const duration = faker.datatype.number({ min: 30, max: 900 });
-    const end = new Date(start.getTime() + duration * 1000);
+  // Generate call logs for last 30 days
+  const MS_IN_DAY = 24 * 60 * 60 * 1000;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
 
-    await client.query(
-      `INSERT INTO call_logs (call_id, agent_id, queue, start_time, end_time, duration, type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        faker.datatype.uuid(),
-        agent.id,
-        queue,
-        start,
-        end,
-        duration,
-        type,
-        status,
-      ]
-    );
+  for (let dayOffset = 0; dayOffset < 30; dayOffset++) {
+    const dayStart = new Date(today.getTime() - dayOffset * MS_IN_DAY);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart.getTime() + MS_IN_DAY - 1);
+
+    for (const queue of QUEUES) {
+      for (const status of STATUSES) {
+        for (const type of CALL_TYPES) {
+          for (let i = 0; i < repsPerCombinationPerDay; i++) {
+            const agent = agents[Math.floor(Math.random() * agents.length)];
+            const start = faker.date.between(dayStart, dayEnd);
+            const duration = faker.datatype.number({ min: 30, max: 900 });
+            const end = new Date(start.getTime() + duration * 1000);
+
+            await client.query(
+              `INSERT INTO call_logs (call_id, agent_id, queue, start_time, end_time, duration, type, status)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                faker.datatype.uuid(),
+                agent.id,
+                queue,
+                start,
+                end,
+                duration,
+                type,
+                status,
+              ]
+            );
+          }
+        }
+      }
+    }
   }
 
   await client.end();
-  console.log(`${rows} call logs inserted with data distributed over past 30 days.`);
+  const totalRows =
+    30 *
+    QUEUES.length *
+    STATUSES.length *
+    CALL_TYPES.length *
+    repsPerCombinationPerDay;
+  console.log(
+    `✅ Seeded ${totalRows} call logs with ENUMs over 30 days (each combo × ${repsPerCombinationPerDay})`
+  );
 }
 
-seedData(10000);
+seedData(100); // You can change this to any number you want
