@@ -10,7 +10,7 @@ Before running the script, make sure you have:
 
 - ✅ A **PostgreSQL** database running.  
   Follow the setup guide here:  
-  👉 [Vonage Hackathon DB Setup Guide](https://github.com/sahil-khanna-vonage/vonage-hackathon-2025-bot-api)
+  👉 [Vonage Hackathon Assistant API](https://github.com/sahil-khanna-vonage/vonage-hackathon-2025-assistant-api)
 
 - ✅ **Node.js and NPM** installed on your machine.
 
